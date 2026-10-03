@@ -1,0 +1,260 @@
+package com.decoutkhanqindev.android_base.ads.composables
+
+import android.content.Context
+import android.graphics.Outline
+import android.graphics.drawable.GradientDrawable
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewOutlineProvider
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.annotation.LayoutRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.decoutkhanqindev.android_base.R
+import com.decoutkhanqindev.android_base.ads.ad_unit.AdUnitState
+import com.decoutkhanqindev.android_base.ads.ad_unit.NativeAdUnit
+import com.decoutkhanqindev.android_base.presentation.components.onClick
+import com.decoutkhanqindev.android_base.presentation.components.shimmerLoading
+import com.decoutkhanqindev.android_base.presentation.theme.BlackAlpha50
+import com.decoutkhanqindev.android_base.presentation.theme.White
+import com.google.android.gms.ads.nativead.MediaView
+import com.google.android.gms.ads.nativead.NativeAd
+import com.google.android.gms.ads.nativead.NativeAdView
+
+@Composable
+fun NativeAdView(
+    adUnit: () -> NativeAdUnit,
+    layoutType: NativeLayoutType,
+    modifier: Modifier = Modifier,
+    isCloseVisible: Boolean = false,
+    onCloseClick: (() -> Unit)? = null,
+) {
+    val preview = LocalInspectionMode.current
+    val context = LocalContext.current
+    val adState by adUnit().state.collectAsStateWithLifecycle()
+    val nativeAd = adUnit().nativeAd
+    val colors = NativeAdColors(
+        cardBackground = MaterialTheme.colorScheme.surfaceContainer,
+        cardBorder = MaterialTheme.colorScheme.outlineVariant,
+        accent = MaterialTheme.colorScheme.primary,
+        headline = MaterialTheme.colorScheme.onSurface,
+        body = MaterialTheme.colorScheme.onSurfaceVariant,
+        ctaText = MaterialTheme.colorScheme.onPrimary,
+    )
+
+    DisposableEffect(adUnit()) {
+        adUnit().load(context)
+        onDispose { adUnit().release() }
+    }
+
+    if (preview) return
+
+    val isFullScreen = layoutType == NativeLayoutType.FULL_SCREEN
+    if (!isFullScreen && (adState == AdUnitState.NONE || adState == AdUnitState.FAILED)) return
+
+    Box(modifier = modifier) {
+        NativeAdContent(
+            layoutType = layoutType,
+            nativeAd = { nativeAd },
+            adState = adState,
+            colors = colors,
+            modifier = Modifier.then(
+                if (isFullScreen) Modifier.fillMaxSize()
+                else Modifier.fillMaxWidth()
+            ),
+        )
+
+        if (isCloseVisible && onCloseClick != null) {
+            CloseButton(
+                onClick = onCloseClick,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NativeAdContent(
+    layoutType: NativeLayoutType,
+    nativeAd: () -> NativeAd?,
+    adState: AdUnitState,
+    colors: NativeAdColors,
+    modifier: Modifier = Modifier,
+) {
+    Box {
+        AndroidView(
+            factory = layoutType.viewBuilder(),
+            onRelease = { view -> view.destroy() },
+            update = { view ->
+                applyNativeAdColors(view, colors)
+                nativeAd()?.let { bindNativeAd(view, it) }
+            },
+            modifier = modifier,
+        )
+
+        if (adState == AdUnitState.LOADING && nativeAd() == null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .shimmerLoading(backgroundColor = MaterialTheme.colorScheme.surfaceVariant),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CloseButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .onClick(shape = CircleShape, action = onClick)
+            .background(color = BlackAlpha50, shape = CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Close,
+            contentDescription = null,
+            tint = White,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+private fun NativeLayoutType.viewBuilder(): (Context) -> NativeAdView = when (this) {
+    NativeLayoutType.MEDIA_4_3 -> { context ->
+        buildNativeAdView(context, R.layout.native_ad_media_4_3, iconCornerDp = 8)
+    }
+
+    NativeLayoutType.MEDIA_16_9 -> { context ->
+        buildNativeAdView(context, R.layout.native_ad_media_16_9, iconCornerDp = 6)
+    }
+
+    NativeLayoutType.FULL_SCREEN -> { context ->
+        buildNativeAdView(context, R.layout.native_ad_full_screen, iconCornerDp = 10)
+    }
+}
+
+private fun buildNativeAdView(
+    context: Context,
+    @LayoutRes layoutRes: Int,
+    iconCornerDp: Int,
+): NativeAdView {
+    val dp = { v: Int -> (v * context.resources.displayMetrics.density).toInt() }
+    val view = LayoutInflater.from(context).inflate(layoutRes, null, false) as NativeAdView
+
+    val icon = view.findViewById<ImageView>(R.id.ad_icon)
+    icon.clipToOutline = true
+    icon.outlineProvider = object : ViewOutlineProvider() {
+        override fun getOutline(v: View, outline: Outline) {
+            outline.setRoundRect(0, 0, v.width, v.height, dp(iconCornerDp).toFloat())
+        }
+    }
+
+    val media = view.findViewById<MediaView>(R.id.ad_media)
+    media.clipToOutline = true
+    media.outlineProvider = object : ViewOutlineProvider() {
+        override fun getOutline(v: View, outline: Outline) {
+            outline.setRoundRect(0, 0, v.width, v.height, dp(8).toFloat())
+        }
+    }
+
+    view.iconView = icon
+    view.headlineView = view.findViewById(R.id.ad_headline)
+    view.bodyView = view.findViewById(R.id.ad_body)
+    view.mediaView = media
+    view.callToActionView = view.findViewById(R.id.ad_cta)
+
+    return view
+}
+
+@Immutable
+private data class NativeAdColors(
+    val cardBackground: Color,
+    val cardBorder: Color,
+    val accent: Color,
+    val headline: Color,
+    val body: Color,
+    val ctaText: Color,
+)
+
+// mutate() bắt buộc: drawable inflate từ XML dùng chung constant state, không mutate sẽ đổi màu mọi instance khác.
+private fun applyNativeAdColors(
+    view: NativeAdView,
+    colors: NativeAdColors,
+) {
+    val strokeWidthPx = (1 * view.resources.displayMetrics.density).toInt()
+
+    (view.background?.mutate() as? GradientDrawable)?.apply {
+        setColor(colors.cardBackground.toArgb())
+        setStroke(strokeWidthPx, colors.cardBorder.toArgb())
+    }
+
+    val label = view.findViewById<TextView>(R.id.ad_label)
+    (label.background?.mutate() as? GradientDrawable)?.setStroke(
+        strokeWidthPx,
+        colors.accent.toArgb()
+    )
+    label.setTextColor(colors.accent.toArgb())
+
+    (view.headlineView as? TextView)?.setTextColor(colors.headline.toArgb())
+    (view.bodyView as? TextView)?.setTextColor(colors.body.toArgb())
+
+    (view.callToActionView as? TextView)?.apply {
+        (background?.mutate() as? GradientDrawable)?.setColor(colors.accent.toArgb())
+        setTextColor(colors.ctaText.toArgb())
+    }
+}
+
+private fun bindNativeAd(view: NativeAdView, nativeAd: NativeAd) {
+    val icon = nativeAd.icon
+    (view.iconView as? ImageView)?.apply {
+        visibility = if (icon != null) View.VISIBLE else View.GONE
+        if (icon != null) setImageDrawable(icon.drawable)
+    }
+    (view.headlineView as? TextView)?.text = nativeAd.headline
+    (view.bodyView as? TextView)?.apply {
+        text = nativeAd.body
+        visibility = if (nativeAd.body != null) View.VISIBLE else View.GONE
+    }
+    view.mediaView?.visibility = run {
+        val media = nativeAd.mediaContent
+        if (media != null && (media.hasVideoContent() || nativeAd.images.isNotEmpty())) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
+    }
+    (view.callToActionView as? TextView)?.apply {
+        text = nativeAd.callToAction
+        visibility = if (nativeAd.callToAction != null) View.VISIBLE else View.GONE
+    }
+    view.setNativeAd(nativeAd)
+}
