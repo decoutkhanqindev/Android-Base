@@ -70,7 +70,7 @@ class AdsManager : KoinComponent, Application.ActivityLifecycleCallbacks, Tag {
         if (!isConsentRequested.compareAndSet(false, true)) return
         scope.launch {
             networkManager.isAvailable.collectCatching(
-                action = {
+                block = {
                     if (!it || isMobileAdsInitializeCalled.get()) return@collectCatching
                     gatherConsent(activity)
                 },
@@ -134,7 +134,7 @@ class AdsManager : KoinComponent, Application.ActivityLifecycleCallbacks, Tag {
         scope.launch {
             withContextCatching(
                 context = Dispatchers.IO,
-                action = {
+                block = {
                     Timber.tag(tag).d("Initializing MobileAds...")
                     MobileAds.initialize(application) { status ->
                         Timber.tag(tag).d("MobileAds initialized: ${status.adapterStatusMap}")

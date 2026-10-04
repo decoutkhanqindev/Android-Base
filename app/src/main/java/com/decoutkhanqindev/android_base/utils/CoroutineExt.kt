@@ -20,11 +20,11 @@ suspend inline fun <T> suspendRunCatching(
 
 suspend inline fun <T> withContextCatching(
     context: CoroutineContext = EmptyCoroutineContext,
-    crossinline action: suspend () -> T,
+    crossinline block: suspend () -> T,
     crossinline catch: (Exception) -> T,
 ): T = withContext(context) {
     try {
-        action()
+        block()
     } catch (c: CancellationException) {
         throw c
     } catch (e: Exception) {
@@ -33,10 +33,10 @@ suspend inline fun <T> withContextCatching(
 }
 
 suspend inline fun <T> Flow<T>.collectCatching(
-    crossinline action: suspend (T) -> Unit,
+    crossinline block: suspend (T) -> Unit,
     crossinline catch: (Exception) -> Unit,
 ) = try {
-    collect { action(it) }
+    collect { block(it) }
 } catch (c: CancellationException) {
     throw c
 } catch (e: Exception) {
@@ -44,8 +44,8 @@ suspend inline fun <T> Flow<T>.collectCatching(
 }
 
 fun <T> Flow<T>.recoverCatching(
-    action: suspend FlowCollector<T>.(Throwable) -> Unit,
+    block: suspend FlowCollector<T>.(Throwable) -> Unit,
 ): Flow<T> = catch { t ->
     if (t is CancellationException) throw t
-    action(t)
+    block(t)
 }
