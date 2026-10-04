@@ -6,8 +6,6 @@ Hướng dẫn cho Claude Code (và dev) khi làm việc trong project này. **M
 
 **Android-Base** — base project Android để khởi tạo app mới: Jetpack Compose · Clean Architecture · MVI · Navigation 3 · Koin · Coroutines/Flow.
 
-- Khung kiến trúc (Clean Arch + MVI + Nav3 + Koin) lấy từ *Lịch Việt Lộc Phát* ([decoutkhanqindev/Lich-Viet-Loc-Phat](https://github.com/decoutkhanqindev/Lich-Viet-Loc-Phat)).
-- Hạ tầng dùng chung (ads + consent UMP, DataStore/Language/Network manager, CoroutineExt, Modifiers, dialog) port từ *DexReader* ([decoutkhanqindev/DexReader](https://github.com/decoutkhanqindev/DexReader)), đã đổi Hilt → Koin, navigation-compose → Navigation 3.
 - Package / namespace / applicationId: `com.decoutkhanqindev.android_base` · single module `:app`
 - minSdk 26 · compileSdk/targetSdk 37 · Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (toolchain)
 - Theme: `AppTheme` (mặc định như project Android Studio mới tạo) · XML theme `Theme.App`
@@ -28,9 +26,30 @@ Hướng dẫn cho Claude Code (và dev) khi làm việc trong project này. **M
 
 ## Hard rules ⚠️
 
+- **Base tự đủ — chỉ dựa vào repo này.** Code + file này là nguồn sự thật duy nhất, không có project tham khảo nào khác. KHÔNG clone/fetch/đọc repo GitHub hay project khác trong máy để lấy pattern, kể cả khi trùng tên class/thư viện (trừ khi user chỉ định). Pattern chưa có ở đây → hỏi user.
+- **Đọc có chủ đích:** mở file mẫu theo bảng [Đọc gì cho task nào](#đọc-gì-cho-task-nào) + file đang sửa; chỉ mở thêm file mà file đó import/gọi tới. Không quét cả repo, không mở `build/`, `.gradle/`, `.kotlin/`, `.idea/`, source thư viện trong Gradle cache (trừ khi compile báo lỗi API).
 - **Git — KHÔNG tự chạy khi chưa được phép:** `git commit` · `git push` / `--force` · `git reset --hard` · `git rebase` · `git merge` · `git branch -D`.
 - Thêm dependency, permission Manifest, hoặc xoá code/resource đang dùng → hỏi trước.
 - Xong việc phải: `./gradlew :app:compileDebugKotlin` pass + chạy [grep kiểm tra](#18-banned-patterns) ra 0 kết quả.
+
+## Đọc gì cho task nào
+
+Mỗi loại task đã có **file mẫu** trong base — đọc file mẫu + mục tương ứng rồi làm theo đúng pattern đó, không tự nghĩ pattern mới. Đường dẫn code tính từ `app/src/main/java/com/decoutkhanqindev/android_base/`; file Gradle tính từ gốc repo.
+
+| Task | File mẫu | Mục |
+|---|---|---|
+| Thêm / sửa màn | `presentation/screens/main/` (Screen · Content · ViewModel · `state/`) · `presentation/navigation/AppDestinations.kt` · `presentation/navigation/AppNavDisplay.kt` · `di/AppModule.kt` | 10 · 11 · 19 |
+| Nghiệp vụ (model → UseCase → Repository) | `domain/{model,repository,usecase}/Placeholder.kt` · `data/repository/Placeholder.kt` · `di/AppModule.kt` | 8 · 9 · 12 |
+| Gọi API · DB local · Firebase · widget | công thức ở mục 1.3 · `gradle/libs.versions.toml` · `app/build.gradle.kts` | 1.3 · 7 |
+| Lưu cài đặt (prefs) | `data/local/datastore/DataStoreManager.kt` | 2 |
+| Ngôn ngữ · màn Language / Onboarding | `presentation/model/LanguageValue.kt` · `data/local/locale/LanguageManager.kt` · `presentation/MainActivity.kt` · `presentation/screens/splash/SplashScreen.kt` | 5 |
+| Ads (placement, show trong màn) | `ads/AdsManager.kt` · `ads/ad_unit/AdUnit.kt` + unit cùng định dạng · `ads/composables/` · `presentation/screens/splash/SplashScreen.kt` (mẫu full-screen) · `app/build.gradle.kts` (ad unit id) | 4 |
+| Mạng / offline | `data/network/connectivity/NetworkManager.kt` · `presentation/navigation/AppNavDisplay.kt` | 2 · 3 |
+| UI dùng chung · theme | `presentation/components/` · `presentation/theme/` | 14 · 15 · 16 |
+| Coroutine · bắt lỗi | `utils/CoroutineExt.kt` | 13 |
+| Thư viện | `gradle/libs.versions.toml` · `app/build.gradle.kts` | 7 |
+
+Task không có trong bảng (sửa bug, đổi text…) → tìm đúng file bằng grep tên class/hàm/string, không quét cả repo. Cần pattern mà base chưa có → hỏi user.
 
 ---
 
@@ -58,7 +77,6 @@ com.decoutkhanqindev.android_base/
     ├── MainActivity.kt            # requestConsent, áp locale (LocalConfiguration/LocalResources), AppTheme
     ├── base/BaseViewModel.kt      # MVI <State, Intent, Effect>
     ├── components/                # Modifiers · AppLottie · dialog/NoInternetDialog
-    ├── effects/                   # LaunchedWithLifecycleEffect (collect flow theo lifecycle)
     ├── model/                     # UiModel · LanguageValue · AnimationContentKey
     ├── navigation/                # AppDestinations (NavKey) · AppNavDisplay (+ NoInternetDialog)
     ├── screens/<feature>/         # XxxScreen · XxxContent · XxxViewModel · state/{XxxState, XxxIntent, XxxEffect}
@@ -103,14 +121,14 @@ Hệ quả bắt buộc:
 
 ### 1.3 Phần tuỳ project (chưa có trong base — thêm khi cần)
 
-| Cần | Làm | Tham khảo |
-|---|---|---|
-| Gọi API | `data/network/api/` (ApiService, response DTO) + interceptor + Koin `single` cho OkHttp/Retrofit; map `HttpException`/`IOException` → exception domain tại Repository | DexReader `data/network/api`, `di/network/ApiModule.kt` |
-| DB local | `data/local/database/` (Room: Database, Dao, Entity) | DexReader `data/local/database` |
-| Nguồn dữ liệu khác (asset, thuật toán…) | `data/source/<tên>/` — `XxxDataSource` + `XxxDataSourceImpl`, chỉ `data/repository` dùng | Lịch Việt `data/source` |
-| Firebase (Analytics/Crashlytics/Perf) | plugin `google-services` (+ `crashlytics`, `firebase-perf`), Firebase BOM, `app/google-services.json`; bật collection chỉ ở release: `Firebase.crashlytics.isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG` (tương tự analytics/perf) trong `lifecycleScope.launch(Dispatchers.IO)` | DexReader `MainActivity.setUpFirebaseSdk` |
-| Màn Language / Onboarding | Xem [mục 5](#5-ngôn-ngữ--locale) + [mục 4](#4-ads--admob--consent-ump) | DexReader `screens/language`, `screens/onboarding` |
-| Widget | Glance — `presentation/widget/` | Lịch Việt `presentation/widget` |
+| Cần | Làm |
+|---|---|
+| Gọi API | Retrofit + OkHttp + converter kotlinx-serialization. `data/network/api/XxxApiService.kt` (`suspend fun`) + DTO `@Serializable` (`toDomain()` cạnh DTO); Koin `single` cho `OkHttpClient` (interceptor) → `Retrofit` (base URL qua `buildConfigField`) → `XxxApiService`. Repository map `HttpException`/`IOException` → exception domain |
+| DB local | Room + KSP: `data/local/database/` (`AppDatabase`, `XxxDao`, `XxxEntity` + `toDomain()`); Dao trả `Flow` cho observe, `suspend` cho 1 lần; Koin `single` cho database + từng Dao |
+| Nguồn dữ liệu khác (asset, thuật toán…) | `data/source/<tên>/` — `XxxDataSource` + `XxxDataSourceImpl`, chỉ `data/repository` dùng |
+| Firebase (Analytics/Crashlytics/Perf) | plugin `google-services` (+ `crashlytics`, `firebase-perf`), Firebase BOM, `app/google-services.json`; bật collection chỉ ở release trong `MainActivity.onCreate`: `Firebase.crashlytics.isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG` (tương tự analytics/perf) trong `lifecycleScope.launch(Dispatchers.IO)` |
+| Màn Language / Onboarding | Khung `screens/main/` + luồng ở [mục 5](#5-ngôn-ngữ--locale) (Splash → Language → Onboarding → Main) + ad ở [mục 4](#4-ads--admob--consent-ump) |
+| Widget | Glance — `presentation/widget/<tên>/`: `XxxWidget : GlanceAppWidget` + `XxxWidgetReceiver : GlanceAppWidgetReceiver` + `res/xml/<tên>_widget_info.xml` + `<receiver>` trong Manifest |
 
 ---
 
@@ -187,7 +205,7 @@ Rule:
 - `floors: List<Pair<adUnitId, name>>` xếp **high floor trước** (`listOf(HIGH_ID to "inter_home_high", ALL_ID to "inter_home_all")`); placement 1 id = list 1 phần tử. Mỗi `load()` bắt đầu lại từ floor 0; fail → floor kế; hết floor → `FAILED`. Không lặp id trong list.
 - `AdUnit(floors)` là `KoinComponent`, lấy `AdsManager` bằng `private val adsManager: AdsManager by inject()` → từ `AdsManager` unit chỉ dùng `isAdShowing` (ghi) và `canRequestAds` / `isNetworkAvailable` (đọc trong `load()`). Constructor chỉ nhận `floors` — không truyền provider/manager/callback.
 - Mỗi unit có **scope riêng** `CoroutineScope(SupervisorJob() + Dispatchers.Main)` — Mobile Ads SDK bắt buộc load/show trên **main thread**, tuyệt đối không chạy request trên `Dispatchers.IO`.
-- Unit full-screen (Interstitial/Reward/AppOpen) gán `isAdShowing` (property của `AdUnit` trỏ thẳng tới `adsManager.isAdShowing`): `true` khi `onAdShowedFullScreenContent`/`onAdImpression`, `false` khi đóng/lỗi hiển thị — không cần callback `onShowed/onClosed` ra ngoài.
+- Unit full-screen (Interstitial/Reward/AppOpen) gán `isAdShowing` (property của `AdUnit` trỏ thẳng tới `adsManager.isAdShowing`): `true` khi `onAdShowedFullScreenContent`/`onAdImpression`, `false` khi đóng/lỗi hiển thị — caller không tự bật/tắt `isAdShowing`; callback của `show()` (`onAdClosed`…) chỉ để điều hướng/cập nhật UI.
 - `load()`: guard `LOADING`/`LOADED` → no-op (giữ preload) · `resetWaterfall()` · không consent → `FAILED` · không mạng → `FAILED` · request. `NONE`/`FAILED`/`IMPRESSION` đều load lại được. Không có state `NO_NETWORK`, không tự retry khi có mạng — caller gọi `load()` lại.
 - ⚠️ Ad full-screen (Interstitial/Reward/AppOpen) **không** gọi `load()` lại khi đang `IMPRESSION` (đang hiện) — ad mới sẽ bị `onAdDismissed…` xoá; cần guard riêng ở caller.
 - Mỗi request bọc `withTimeout(AdUnit.LOAD_TIMEOUT = 20s)` — timeout = fail thật. Generation counter bỏ kết quả về muộn.
@@ -281,11 +299,11 @@ Rule:
 
 ```kotlin
 class GetXxxUseCase(private val repository: XxxRepository) {
-    suspend operator fun invoke(id: Int): Result<Xxx> = suspendRunCatching { repository.getXxx(id) }
+  suspend operator fun invoke(id: Int): Result<Xxx> = suspendRunCatching { repository.getXxx(id) }
 }
 
 class ObserveXxxUseCase(private val repository: XxxRepository) {
-    operator fun invoke(): Flow<List<Xxx>> = repository.observeXxx()
+  operator fun invoke(): Flow<List<Xxx>> = repository.observeXxx()
 }
 ```
 
@@ -300,7 +318,7 @@ class ObserveXxxUseCase(private val repository: XxxRepository) {
 ## 9. Data layer
 
 - `XxxRepositoryImpl(...) : XxxRepository` trong `data/repository/`; nguồn dữ liệu ở `data/local/…`, `data/network/…`, `data/source/…`.
-- **Main-safe tại Repository/Manager**: `withContext(Dispatchers.IO)` cho IO, `Dispatchers.Default` cho CPU — thường qua `withContextCatching(context = Dispatchers.IO, action = { … }, catch = { … })`. UseCase/ViewModel không tự `withContext`.
+- **Main-safe tại Repository/Manager**: `withContext(Dispatchers.IO)` cho IO, `Dispatchers.Default` cho CPU — thường qua `withContextCatching(context = Dispatchers.IO, block = { … }, catch = { … })`. UseCase/ViewModel không tự `withContext`.
 - Repository được ném exception (UseCase bọc `Result`); không trả `null` để báo lỗi. Map exception thư viện (HTTP, IO, DB…) sang exception có nghĩa tại biên data.
 - Observe từ callback → `callbackFlow { …; awaitClose { unregister } }` + `distinctUntilChanged()`; flow cần sống tiếp sau lỗi → `recoverCatching { emit(default) }` trước `stateIn`.
 - Mapper DTO/Entity → domain đặt trong `data` (extension `toDomain()` cạnh DTO hoặc `object XxxMapper`).
@@ -316,7 +334,7 @@ Luồng một chiều: Content gửi `Intent` → ViewModel → `updateState { }
 | API | Dùng để |
 |---|---|
 | `state: StateFlow<S>` | UI đọc (`collectAsStateWithLifecycle()`) |
-| `effect: SharedFlow<E>` | Sự kiện 1 lần (Screen collect trong `LaunchedWithLifecycleEffect`) |
+| `effect: SharedFlow<E>` | Sự kiện 1 lần (Screen collect trong `LifecycleStartEffect`) |
 | `abstract fun onIntent(intent: I)` | Điểm vào DUY NHẤT từ UI |
 | `protected fun updateState(block: S.() -> S)` | Đổi state atomic |
 | `protected suspend fun sendEffect(effect: E)` | Gọi trong `viewModelScope.launch { }` |
@@ -364,7 +382,7 @@ class XxxViewModel(
         load()
         viewModelScope.launch {
             observeYyy().collectCatching(
-                action = { yyy -> updateState { copy(yyy = yyy.toUiModel()) } },
+                block = { yyy -> updateState { copy(yyy = yyy.toUiModel()) } },
                 catch = { e -> Timber.tag(tag).e(e.stackTraceToString()) },
             )
         }
@@ -398,7 +416,7 @@ class XxxViewModel(
 - `onIntent` là cửa duy nhất UI gọi vào; `when (intent)` exhaustive, không `else`. Hàm public khác chỉ để nhận args khởi tạo ([11.4](#114-truyền-args)).
 - Chỉ đổi state qua `updateState { copy(...) }`; đọc state hiện tại bằng `state.value`.
 - Tác vụ có thể bị gọi chồng → giữ `Job?` và `cancel()` job cũ trước khi launch.
-- Reactive UseCase → `collectCatching(action = …, catch = …)` (tham số đặt tên, `action` trước; cần return sớm trong catch → nhãn `catch@`).
+- Reactive UseCase → `collectCatching(block = …, catch = …)` (tham số đặt tên, `block` trước; cần return sớm trong catch → nhãn `catch@`).
 - Map domain → UiModel trong VM (`toUiModel()`), không map trong Content. Text hiển thị cho user → `@StringRes` (Effect `ShowMessage` hoặc field `@StringRes` trong State).
 
 ### 10.4 Screen vs Content
@@ -411,13 +429,16 @@ fun XxxScreen(backStack: NavBackStack<NavKey>) {
     val viewModel: XxxViewModel = koinViewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    LaunchedWithLifecycleEffect {
-        viewModel.effect.collect { effect ->
-            when (effect) {
-                is XxxEffect.NavigateToDetail -> backStack.add(DetailDestination(effect.id))
-                is XxxEffect.ShowMessage -> context.showToast(resources.getString(effect.messageRes))
+    LifecycleStartEffect(viewModel) {
+        val job = lifecycleScope.launch {
+            viewModel.effect.collect { effect ->
+                when (effect) {
+                    is XxxEffect.NavigateToDetail -> backStack.add(DetailDestination(effect.id))
+                    is XxxEffect.ShowMessage -> context.showToast(resources.getString(effect.messageRes))
+                }
             }
         }
+        onStopOrDispose { job.cancel() }
     }
 
     XxxContent(state = state, onIntent = viewModel::onIntent)
@@ -430,7 +451,7 @@ fun XxxScreen(backStack: NavBackStack<NavKey>) {
 | `XxxContent.kt` | UI thuần: nhận `state` + `onIntent` (+ slot ad nếu có); sub-composable `private` cùng file | Biết ViewModel/Koin (`koinInject`, `koinViewModel`)/NavBackStack/Activity; gọi UseCase |
 | `XxxViewModel.kt` | Logic UI, gọi UseCase, giữ State | Import Compose UI, `Context`, build text hiển thị |
 
-- **Lifecycle effect**: collect effect/flow 1 lần → `LaunchedWithLifecycleEffect { }` (`presentation/effects/` — bọc `repeatOnLifecycle(STARTED)`: chạy khi ≥ STARTED, huỷ khi < STARTED, tự restart khi quay lại; không cần tự quản `Job`). Việc gắn với RESUMED (show ad full-screen khi quay lại, `resume()/pause()` banner, reload khi màn resume) → `LifecycleResumeEffect`. Luôn collect flow theo lifecycle qua helper này — KHÔNG rải `repeatOnLifecycle` thô trong từng Screen.
+- **Lifecycle effect**: collect effect/flow 1 lần → `LifecycleStartEffect` (mặc định — chạy khi STARTED, huỷ khi STOPPED). Việc gắn với RESUMED (show ad full-screen khi quay lại, `resume()/pause()` banner, reload khi màn resume) → `LifecycleResumeEffect`. Không dùng `repeatOnLifecycle` hay helper tự viết trong composable.
 - Màn không có state/logic riêng (Splash) được phép chỉ có Screen + Content.
 - Content dài → tách `XxxYyySection.kt` cùng folder màn; dùng ≥ 2 màn → `presentation/components/`.
 - Content thuần nên `@Preview` được (preview `private`, bọc `AppTheme`, `XxxState(...)` mẫu, `onIntent = {}`).
@@ -474,18 +495,18 @@ Lib: `navigation3-runtime`, `navigation3-ui`, `lifecycle-viewmodel-navigation3`.
 ```kotlin
 @Composable
 fun MainScreen() {
-    val backStack = rememberNavBackStack(HomeDestination)
+  val backStack = rememberNavBackStack(HomeDestination)
 
-    Scaffold(
-        bottomBar = {
-            AppBottomNavBar(
-                currentDestination = backStack.lastOrNull(),
-                onNavigateTo = { backStack.navigateTo(it) },
-            )
-        },
-    ) { innerPadding ->
-        MainNavDisplay(backStack = backStack, modifier = Modifier.padding(innerPadding))
-    }
+  Scaffold(
+    bottomBar = {
+      AppBottomNavBar(
+        currentDestination = backStack.lastOrNull(),
+        onNavigateTo = { backStack.navigateTo(it) },
+      )
+    },
+  ) { innerPadding ->
+    MainNavDisplay(backStack = backStack, modifier = Modifier.padding(innerPadding))
+  }
 }
 ```
 
@@ -523,12 +544,12 @@ fun MainScreen() {
 | Hàm | Trả về | Bắt | Dùng ở |
 |---|---|---|---|
 | `suspendRunCatching { }` | `Result<T>` | `Throwable` | UseCase 1 lần |
-| `withContextCatching(context, action, catch)` | `T` | `Exception` | Repository / Manager (đổi dispatcher + map/log lỗi) |
-| `Flow<T>.collectCatching(action, catch)` | — (terminal) | `Exception` từ upstream **và** thân `action` | ViewModel collect UseCase reactive |
+| `withContextCatching(context, block, catch)` | `T` | `Exception` | Repository / Manager (đổi dispatcher + map/log lỗi) |
+| `Flow<T>.collectCatching(block, catch)` | — (terminal) | `Exception` từ upstream **và** thân `block` | ViewModel collect UseCase reactive |
 | `Flow<T>.recoverCatching { }` | `Flow<T>` (intermediate) | `Throwable` | Flow phải sống tiếp (trước `stateIn` trong manager) |
 
 - Hậu tố **`-Catching` = rethrow `CancellationException`, bắt phần còn lại**. Vì vậy ViewModel/Repository **không** tự viết `catch (c: CancellationException) { throw c }` — gọi helper. Ngoại lệ duy nhất: ad unit (phải bắt `TimeoutCancellationException` trước).
-- Scope: `viewModelScope` (VM) · `LaunchedEffect`/`rememberCoroutineScope`/`LaunchedWithLifecycleEffect` (Compose) · `lifecycleScope` (Activity) · manager/ad unit tự tạo scope.
+- Scope: `viewModelScope` (VM) · `LaunchedEffect`/`rememberCoroutineScope` (Compose) · `lifecycleScope` (Activity, `LifecycleStartEffect`) · manager/ad unit tự tạo scope.
 - Dispatcher chọn ở Repository/Manager, không ở VM/UseCase.
 - Banned: `GlobalScope`, `runBlocking` trong code app, `Thread.sleep`.
 
@@ -536,14 +557,14 @@ fun MainScreen() {
 
 - **Theme mặc định như project Android Studio mới**: `AppTheme(darkTheme = isSystemInDarkTheme(), dynamicColor = true)` — light/dark theo hệ thống, dynamic color Android 12+, fallback palette Purple trong `Color.kt`; `Type.kt` chỉ override `bodyLarge`. Thay palette/font theo design (TODO).
 - UI dùng **role của MaterialTheme**: `MaterialTheme.colorScheme.<role>` (alpha biến thể viết inline `colorScheme.onSurface.copy(alpha = 0.6f)`), `MaterialTheme.typography.<role>`, `MaterialTheme.shapes.<role>`. Màu cố định ngoài scheme (overlay trong suốt…) → token trong `Color.kt` (`WhiteAlpha30`, `BlackAlpha50`). `Color.Transparent` dùng thẳng. Hex chỉ ở `Color.kt` (ngoại lệ: layout/drawable XML của native ad).
-- `MainActivity`: `enableEdgeToEdge()`, khoá dọc, `ComposeUiFlags.isBypassUnfocusableComposeViewEnabled = false` (đặt trước `super.onCreate`, giữ như DexReader), Manifest `adjustResize` → mỗi màn tự xử lý inset (`Scaffold` innerPadding, `navigationBarsPadding()`, `imePadding()`).
+- `MainActivity`: `enableEdgeToEdge()`, khoá dọc, `ComposeUiFlags.isBypassUnfocusableComposeViewEnabled = false` (đặt trước `super.onCreate`, giữ nguyên), Manifest `adjustResize` → mỗi màn tự xử lý inset (`Scaffold` innerPadding, `navigationBarsPadding()`, `imePadding()`).
 - **Stability**: State/UiModel `@Immutable`; list → `ImmutableList`; truyền `viewModel::onIntent`; không truyền `MutableState`/ViewModel/`NavBackStack` xuống Content.
 - `remember { }` cache; `remember(key) { }` khi input là tham số; `derivedStateOf { }` **chỉ** khi input là Compose `State`:
   ```kotlin
   val showFab by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } } // ✅ input là State
   val isEmpty = remember(items) { items.isEmpty() }                                 // ✅ input là tham số
   ```
-- Side effect chỉ trong `LaunchedEffect` / `DisposableEffect` / `LaunchedWithLifecycleEffect` / `LifecycleResumeEffect`; dọn dẹp ở `onDispose` / `onPauseOrDispose` (helper lifecycle tự huỷ coroutine khi rời STARTED).
+- Side effect chỉ trong `LaunchedEffect` / `DisposableEffect` / `LifecycleStartEffect` / `LifecycleResumeEffect`; dọn dẹp ở `onDispose` / `onStopOrDispose` / `onPauseOrDispose`.
 - State đổi phải có animation (`AnimatedVisibility`, `AnimatedContent`, `animate*AsState`, `Crossfade`), không snap.
 - Component nhận `modifier: Modifier = Modifier` (tham số optional đầu tiên) và áp vào node gốc.
 
@@ -552,7 +573,6 @@ fun MainScreen() {
 | Cần | Dùng | File |
 |---|---|---|
 | Lớp cơ sở MVI | `BaseViewModel<S, I, E>` | `presentation/base/` |
-| Collect effect/flow theo lifecycle (STARTED) | `LaunchedWithLifecycleEffect { }` | `presentation/effects/` |
 | Click (scale 0.95 + ripple + **debounce 300ms**, clip khi truyền shape) | `Modifier.onClick(shape = …, ripple = …) { }` | `components/Modifiers.kt` |
 | Skeleton loading | `Modifier.shimmerLoading(backgroundColor, shimmerColor, shape, isEnable)` · `Modifier.shimmerHighlight(...)` | `components/Modifiers.kt` |
 | Nền mờ dần (sau nút đáy) | `Modifier.blurBackground(alphas = persistentListOf(0f, 0f, 1f, 1f))` | `components/Modifiers.kt` |
@@ -606,7 +626,7 @@ Quy tắc:
 | Manager dạng interface + `Impl` · base class chỉ có 1 lớp con (vd `BaseAds`) | 1 class cụ thể (`XxxManager`, `AdsManager`) |
 | UseCase/Repository chỉ forward Manager | Inject Manager trực tiếp |
 | `runCatching` trong suspend · `catch (CancellationException)` tự viết | `suspendRunCatching` · `withContextCatching` · `collectCatching` · `recoverCatching` |
-| `repeatOnLifecycle` thô rải trong từng Screen · collect effect ngoài helper lifecycle | `LaunchedWithLifecycleEffect { }` (`presentation/effects/`) · `LifecycleResumeEffect` |
+| `repeatOnLifecycle` / helper observe tự viết trong composable | `LifecycleStartEffect` (mặc định) · `LifecycleResumeEffect` |
 | `context.getString` cho text UI | `stringResource` · `LocalResources.current.getString` |
 | Hex `Color(0x…)`, `Color.White/Black`, `RoundedCornerShape(n.dp)` trong UI | `MaterialTheme.colorScheme/shapes` · token `Color.kt` |
 | Text hardcode trong composable | `strings.xml` |
